@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+import os
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -20,10 +21,14 @@ from piphi_runtime_kit_python import (
     RuntimeConfigSyncResponse,
     RuntimeDiagnosticsResponse,
     RuntimeHealthResponse,
+    MqttBrokerConfig,
+    MqttJsonClient,
+    build_source_topic_root,
     build_config_apply_response,
     build_discovery_response,
     build_event_list_response,
     build_local_event_record,
+    create_tracked_task,
     create_runtime_starter,
     runtime_lifespan,
     schedule_telemetry_delivery,
@@ -42,10 +47,28 @@ from .profiles import (
     normalize_profile_id,
 )
 
+
+def _env_flag(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 INTEGRATION_ID = "piphi-network-433mhz"
 INTEGRATION_NAME = "PiPhi Network 433MHz Devices"
 INTEGRATION_VERSION = "0.1.0"
 MAX_DISCOVERY_CACHE = 200
+MQTT_SOURCE_ENABLED = _env_flag("RTL433_MQTT_ENABLED", False)
+MQTT_BROKER_HOSTNAME = os.getenv("MQTT_HOSTNAME", "127.0.0.1")
+MQTT_BROKER_PORT = int(os.getenv("MQTT_PORT", "1883"))
+MQTT_BROKER_USERNAME = os.getenv("MQTT_USERNAME") or None
+MQTT_BROKER_PASSWORD = os.getenv("MQTT_PASSWORD") or None
+MQTT_CLIENT_ID = os.getenv("MQTT_CLIENT_ID") or f"{INTEGRATION_ID}-subscriber"
+MQTT_QOS = int(os.getenv("MQTT_QOS", "0"))
+MQTT_TOPIC_ROOT = os.getenv("MQTT_TOPIC_ROOT", build_source_topic_root("rtl433"))
+MQTT_PACKET_TOPIC = f"{MQTT_TOPIC_ROOT.rstrip('/')}/packets"
+MQTT_RETRY_DELAY_SECONDS = float(os.getenv("MQTT_RETRY_DELAY_SECONDS", "5"))
 
 starter = create_runtime_starter(
     integration_id=INTEGRATION_ID,
@@ -200,9 +223,32 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+async def startup_sync(_runtime_context, _client) -> None:
+    if not MQTT_SOURCE_ENABLED:
+        return
+    mqtt_client = MqttJsonClient(
+        MqttBrokerConfig(
+            hostname=MQTT_BROKER_HOSTNAME,
+            port=MQTT_BROKER_PORT,
+            username=MQTT_BROKER_USERNAME,
+            password=MQTT_BROKER_PASSWORD,
+            client_id=MQTT_CLIENT_ID,
+            qos=MQTT_QOS,
+        )
+    )
+    create_tracked_task(
+        mqtt_client.run_subscription_forever(
+            topics=[MQTT_PACKET_TOPIC],
+            handler=handle_mqtt_packet,
+            retry_delay_seconds=MQTT_RETRY_DELAY_SECONDS,
+        ),
+        process_state=runtime.process_state,
+    )
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    async with runtime_lifespan(runtime):
+    async with runtime_lifespan(runtime, on_startup=startup_sync):
         yield
 
 
@@ -216,6 +262,7 @@ async def health() -> RuntimeHealthResponse:
             "active_configs": len(registry.ids()),
             "recent_discovery_count": len(recent_seen_devices),
             "supported_profile_count": len(PROFILE_DEFINITIONS),
+            "mqtt_source_enabled": MQTT_SOURCE_ENABLED,
         }
     )
 
@@ -228,6 +275,7 @@ async def diagnostics() -> RuntimeDiagnosticsResponse:
             "recent_event_count": len(registry.recent_events),
             "recent_discovery_count": len(recent_seen_devices),
             "supported_profiles": list_profiles(),
+            "mqtt_packet_topic": MQTT_PACKET_TOPIC if MQTT_SOURCE_ENABLED else None,
         }
     )
 
@@ -399,6 +447,21 @@ async def command(payload: IntegrationCommandRequest) -> dict[str, Any]:
 async def ingest_rtl433(packet: Rtl433Packet, request: Request) -> dict[str, Any]:
     runtime.auth.sync_from_headers(request.headers)
     payload = packet.model_dump(exclude_none=True)
+    return await process_rtl433_packet(payload, source_transport="http")
+
+
+async def handle_mqtt_packet(_topic: str, envelope: dict[str, Any]) -> None:
+    packet = envelope.get("packet")
+    if not isinstance(packet, dict):
+        return
+    await process_rtl433_packet(packet, source_transport="mqtt")
+
+
+async def process_rtl433_packet(
+    payload: dict[str, Any],
+    *,
+    source_transport: str,
+) -> dict[str, Any]:
     discovered = remember_discovered_device(payload)
 
     matched_configs = 0
@@ -436,6 +499,7 @@ async def ingest_rtl433(packet: Rtl433Packet, request: Request) -> dict[str, Any
             event_type="rtl433.packet.matched",
             device=entry,
             payload={
+                "transport": source_transport,
                 "profile": profile_id,
                 "metrics": metrics,
                 "model": discovered["model"],
@@ -453,6 +517,7 @@ async def ingest_rtl433(packet: Rtl433Packet, request: Request) -> dict[str, Any
                 "container_id": runtime.auth.container_id or None,
             },
             payload={
+                "transport": source_transport,
                 "profile": discovered["profile"],
                 "model": discovered["model"],
                 "station_id": discovered["station_id"],
@@ -462,6 +527,7 @@ async def ingest_rtl433(packet: Rtl433Packet, request: Request) -> dict[str, Any
 
     return {
         "status": "ok",
+        "transport": source_transport,
         "device_id": discovered["device_id"],
         "profile": discovered["profile"],
         "matched_configs": matched_configs,

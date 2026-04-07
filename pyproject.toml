@@ -7,7 +7,7 @@ authors = [
 ]
 dependencies = [
     "fastapi[standard]>=0.116.1",
-    "piphi-runtime-kit-python[fastapi] @ file:///${PROJECT_ROOT}/../piphi-runtime-kit-python",
+    "piphi-runtime-kit-python[fastapi,mqtt] @ file:///${PROJECT_ROOT}/../piphi-runtime-kit-python",
 ]
 requires-python = ">=3.11"
 readme = "README.md"
@@ -24,4 +24,3 @@ distribution = false
 [tool.pdm.scripts]
 dev = "uvicorn piphi_network_433mhz.app:app --host 0.0.0.0 --port 8090 --reload"
 test = "pytest"
-

@@ -6,6 +6,11 @@ This package uses `piphi-runtime-kit-python` to provide the main PiPhi runtime.
 It is designed to work with a separate `rtl_433` helper that listens for radio
 packets and forwards decoded JSON into the runtime.
 
+The runtime can consume packets in two ways:
+
+- direct HTTP posts to `/ingest/rtl433`
+- optional MQTT subscription to the shared source topic
+
 ## What this integration does
 
 - accepts passive `rtl_433` packets through `/ingest/rtl433`
@@ -67,6 +72,27 @@ The runtime starts on `http://127.0.0.1:8090`.
 - `POST /command`
 - `POST /ingest/rtl433`
 
+## Optional MQTT Source Subscription
+
+If you enable MQTT for the bridge, this runtime can also subscribe to the
+shared source topic instead of relying only on direct helper HTTP posts.
+
+Shared packet topic:
+
+```text
+piphi/sources/rtl433/packets
+```
+
+Useful environment variables:
+
+- `RTL433_MQTT_ENABLED=true`
+- `MQTT_HOSTNAME=127.0.0.1`
+- `MQTT_PORT=1883`
+- `MQTT_TOPIC_ROOT=piphi/sources/rtl433`
+
+This runtime uses the packet envelope's `packet` field and then runs the same
+normalization path as the HTTP ingest route.
+
 ## Example packet ingest
 
 ```bash
@@ -89,3 +115,20 @@ curl -X POST http://127.0.0.1:8090/ingest/rtl433 \
   model the sidecar relationship.
 - Linux is the initial target because `rtl_433` helper containers fit that path
   best.
+
+## Hardware access notes
+
+The main runtime does not talk to SDR hardware directly.
+That work belongs to the `rtl433_ingest` helper container.
+
+For real RTL-SDR use on Linux, the helper usually needs:
+
+- `rtl_433` installed inside the helper container
+- host USB access to the SDR dongle
+- `network_mode: "host"`
+- `privileged: true`
+- an explicit USB device mapping such as `/dev/bus/usb`
+
+This scaffold now shows that device mapping directly in `src/manifest.json`.
+That makes the SDR requirement visible in the manifest instead of hiding it in
+setup docs alone.

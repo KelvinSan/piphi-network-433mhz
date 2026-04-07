@@ -96,6 +96,13 @@
             "image": "ghcr.io/piphi/rtl433-bridge:0.1.0",
             "network_mode": "host",
             "privileged": true,
+            "devices": [
+              {
+                "host": "/dev/bus/usb",
+                "container": "/dev/bus/usb",
+                "permissions": "rwm"
+              }
+            ],
             "restart_policy": {
               "name": "unless-stopped",
               "maximum_retry_count": 0
