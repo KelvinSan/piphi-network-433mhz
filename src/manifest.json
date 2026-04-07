@@ -1,0 +1,112 @@
+{
+  "manifest_version": "1.0",
+  "id": "piphi-network-433mhz",
+  "name": "PiPhi Network 433MHz Devices",
+  "version": "0.1.0",
+  "description": "Generic rtl_433-based integration for supported 433MHz sensors and devices.",
+  "maintainer": {
+    "name": "PiPhi Network",
+    "website": "https://piphi.io"
+  },
+  "image": "ghcr.io/piphi/piphi-network-433mhz:0.1.0",
+  "platforms": ["linux"],
+  "runtime": {
+    "linux": {
+      "type": "container",
+      "container": {
+        "image": "ghcr.io/piphi/piphi-network-433mhz:0.1.0",
+        "ports": [
+          { "container": 8090, "host": 8090 }
+        ],
+        "environment": {
+          "LOG_LEVEL": "info"
+        },
+        "restart_policy": {
+          "name": "unless-stopped",
+          "maximum_retry_count": 0
+        }
+      },
+      "discovery": {
+        "method": "passive"
+      }
+    }
+  },
+  "api": {
+    "endpoints": {
+      "health": "/health",
+      "diagnostics": "/diagnostics",
+      "discover": "/discover",
+      "entities": "/entities",
+      "state": "/state",
+      "config": "/config",
+      "config_sync": "/config/sync",
+      "deconfigure": "/deconfigure",
+      "ui_config": "/ui-config",
+      "events": "/events",
+      "command": "/command"
+    }
+  },
+  "config": {
+    "source": "endpoint",
+    "endpoint": "/ui-config",
+    "required": true,
+    "editable_fields": ["profile", "model", "station_id", "channel", "alias"],
+    "runtime_fields": ["id", "config_id", "container_id", "device_id"],
+    "identity_fields": ["profile", "model", "station_id", "channel"]
+  },
+  "identity": {
+    "fields": ["profile", "model", "station_id", "channel"]
+  },
+  "capabilities": {
+    "temperature_c": { "kind": "sensor", "unit": "°C" },
+    "humidity_percent": { "kind": "sensor", "unit": "%" },
+    "battery_ok": { "kind": "sensor", "unit": "bool" },
+    "wind_speed_kph": { "kind": "sensor", "unit": "km/h" },
+    "rain_total_mm": { "kind": "sensor", "unit": "mm" },
+    "contact_open": { "kind": "sensor", "unit": "bool" },
+    "leak_detected": { "kind": "sensor", "unit": "bool" },
+    "signal_rssi": { "kind": "sensor", "unit": "dBm" },
+    "clear_discovery_cache": { "kind": "action" }
+  },
+  "commands": {
+    "clear_discovery_cache": {
+      "description": "Clear the cache of recently seen rtl_433 devices.",
+      "timeout_ms": 5000
+    }
+  },
+  "entities": [
+    { "id": "temperature_c", "name": "Temperature", "capabilities": ["temperature_c"] },
+    { "id": "humidity_percent", "name": "Humidity", "capabilities": ["humidity_percent"] },
+    { "id": "battery_ok", "name": "Battery OK", "capabilities": ["battery_ok"] },
+    { "id": "wind_speed_kph", "name": "Wind Speed", "capabilities": ["wind_speed_kph"] },
+    { "id": "rain_total_mm", "name": "Rain Total", "capabilities": ["rain_total_mm"] },
+    { "id": "contact_open", "name": "Contact Open", "capabilities": ["contact_open"] },
+    { "id": "leak_detected", "name": "Leak Detected", "capabilities": ["leak_detected"] },
+    { "id": "signal_rssi", "name": "Signal RSSI", "capabilities": ["signal_rssi"] }
+  ],
+  "extensions": [
+    {
+      "id": "rtl433_ingest",
+      "enabled_by_default": true,
+      "type": "event_ingestion",
+      "runtime": {
+        "linux": {
+          "type": "container_sidecar",
+          "container": {
+            "image": "ghcr.io/piphi/rtl433-bridge:0.1.0",
+            "network_mode": "host",
+            "privileged": true,
+            "restart_policy": {
+              "name": "unless-stopped",
+              "maximum_retry_count": 0
+            }
+          }
+        }
+      },
+      "outputs": {
+        "endpoint": "/ingest/rtl433",
+        "event_type": "rtl433_packet"
+      }
+    }
+  ]
+}

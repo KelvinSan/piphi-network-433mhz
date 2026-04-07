@@ -1,0 +1,27 @@
+[project]
+name = "piphi-network-433mhz"
+version = "0.1.0"
+description = "PiPhi runtime integration for rtl_433-compatible 433MHz devices"
+authors = [
+    { name = "PiPhi Network" },
+]
+dependencies = [
+    "fastapi[standard]>=0.116.1",
+    "piphi-runtime-kit-python[fastapi] @ file:///${PROJECT_ROOT}/../piphi-runtime-kit-python",
+]
+requires-python = ">=3.11"
+readme = "README.md"
+license = { text = "MIT" }
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+]
+
+[tool.pdm]
+distribution = false
+
+[tool.pdm.scripts]
+dev = "uvicorn piphi_network_433mhz.app:app --host 0.0.0.0 --port 8090 --reload"
+test = "pytest"
+

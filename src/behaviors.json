@@ -1,0 +1,104 @@
+{
+  "devices": [
+    {
+      "id": "rtl433_device",
+      "name": "433MHz Device",
+      "description": "rtl_433-compatible weather, contact, leak, and general sensor devices",
+      "capabilities": [
+        "temperature_c",
+        "humidity_percent",
+        "battery_ok",
+        "wind_speed_kph",
+        "rain_total_mm",
+        "contact_open",
+        "leak_detected",
+        "signal_rssi",
+        "clear_discovery_cache"
+      ],
+      "intents": [
+        {
+          "id": "monitor_environment",
+          "label": "Monitor environment",
+          "description": "Track temperature, humidity, rain, and related readings"
+        },
+        {
+          "id": "watch_open_close",
+          "label": "Watch open and close events",
+          "description": "Monitor contact sensors such as doors and windows"
+        },
+        {
+          "id": "detect_water",
+          "label": "Detect water leaks",
+          "description": "Watch supported leak and moisture sensors"
+        }
+      ],
+      "conditions": [
+        {
+          "id": "temperature_above",
+          "label": "Temperature above",
+          "type": "number",
+          "params": [
+            {
+              "name": "celsius",
+              "label": "Temperature threshold",
+              "type": "number",
+              "default": 30,
+              "step": 0.5,
+              "unit": "°C",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "contact_is_open",
+          "label": "Contact is open",
+          "type": "enum",
+          "params": [
+            {
+              "name": "state",
+              "label": "Contact state",
+              "type": "enum",
+              "options": ["open"],
+              "default": "open",
+              "required": true
+            }
+          ]
+        },
+        {
+          "id": "leak_detected",
+          "label": "Leak detected",
+          "type": "enum",
+          "params": [
+            {
+              "name": "state",
+              "label": "Leak state",
+              "type": "enum",
+              "options": ["true"],
+              "default": "true",
+              "required": true
+            }
+          ]
+        }
+      ],
+      "actions": [
+        {
+          "id": "clear_discovery_cache",
+          "label": "Clear discovery cache"
+        },
+        {
+          "id": "notify",
+          "label": "Send notification",
+          "params": [
+            {
+              "name": "message",
+              "label": "Notification message",
+              "type": "text",
+              "default": "433MHz device event detected",
+              "required": true
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

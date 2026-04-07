@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.pdm-python
+*.pyc
+*.pyo
+*.pyd
+dist/
+build/
