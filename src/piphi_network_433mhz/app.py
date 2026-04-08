@@ -98,6 +98,10 @@ class Rtl433Packet(BaseModel):
     channel: str | int | None = None
 
 
+def _optional_config_attr(config: RuntimeConfig, name: str) -> Any:
+    return getattr(config, name, None)
+
+
 def build_device_key(model: str | None, station_id: Any, channel: Any = None) -> str:
     model_part = str(model or "unknown")
     station_part = str(station_id or "unknown")
@@ -125,10 +129,10 @@ def make_registry_entry(config: Rtl433DeviceConfig) -> dict[str, Any]:
     profile_id = normalize_profile_id(config.profile)
     device_key = build_device_key(config.model, config.station_id, config.channel)
     return {
-        "config_id": config.config_id or config.id,
+        "config_id": _optional_config_attr(config, "config_id") or config.id,
         "device_id": device_key,
-        "container_id": config.container_id,
-        "integration_id": config.integration_id or INTEGRATION_ID,
+        "container_id": _optional_config_attr(config, "container_id"),
+        "integration_id": _optional_config_attr(config, "integration_id") or INTEGRATION_ID,
         "profile": profile_id,
         "model": config.model,
         "station_id": config.station_id,
@@ -356,8 +360,8 @@ async def config(
     sync_runtime_auth_from_fastapi_payload(runtime, request, payload)
     await apply_config(payload)
     return build_config_apply_response(
-        config_id=payload.config_id or payload.id,
-        container_id=payload.container_id,
+        config_id=_optional_config_attr(payload, "config_id") or payload.id,
+        container_id=_optional_config_attr(payload, "container_id"),
         metadata={
             "profile": normalize_profile_id(payload.profile),
             "device_key": build_device_key(payload.model, payload.station_id, payload.channel),
@@ -371,7 +375,13 @@ async def sync_config(
     request: Request,
 ) -> RuntimeConfigSyncResponse:
     runtime.auth.sync_from_headers(request.headers, payload_container_id=snapshot.container_id)
-    typed_configs = validate_typed_configs(snapshot.configs, Rtl433DeviceConfig)
+    typed_configs = validate_typed_configs(
+        [
+            config.model_dump() if isinstance(config, RuntimeConfig) else config
+            for config in snapshot.configs
+        ],
+        Rtl433DeviceConfig,
+    )
     return await config_sync.apply_snapshot(
         snapshot=snapshot.model_copy(update={"configs": typed_configs}),
         active_config_ids=registry.ids(),
