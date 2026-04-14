@@ -1,35 +1,42 @@
 # piphi-network-433mhz
 
-Beginner-friendly PiPhi integration for `rtl_433` compatible 433MHz devices.
+PiPhi integration for `rtl_433` compatible 433 MHz devices.
 
-This package uses `piphi-runtime-kit-python` to provide the main PiPhi runtime.
-It is designed to work with a separate `rtl_433` helper that listens for radio
-packets and forwards decoded JSON into the runtime.
-
-The runtime can consume packets in two ways:
-
-- direct HTTP posts to `/ingest/rtl433`
-- optional MQTT subscription to the shared source topic
+This runtime is built on the published Python SDK, `piphi-runtime-kit-python`,
+and is designed to work alongside a separate `rtl_433` helper that listens for
+radio packets and forwards decoded JSON into the runtime.
 
 ## What this integration does
 
-- accepts passive `rtl_433` packets through `/ingest/rtl433`
-- keeps a cache of recently seen devices for discovery
-- lets users configure a discovered device by profile and identity fields
-- exposes PiPhi routes for config, discovery, entities, state, events, and health
+- accepts passive `rtl_433` packets through `POST /ingest/rtl433`
+- keeps a cache of recently seen devices for discovery and configuration
+- lets users configure discovered devices by profile and identity fields
+- exposes PiPhi routes for health, discovery, config, state, events, and commands
 - publishes normalized telemetry back to PiPhi Core
+- optionally subscribes to the shared MQTT packet topic instead of only relying on HTTP ingest
+
+## Runtime SDK and testkit
+
+This integration now installs the published runtime kit directly from PyPI:
+
+- runtime SDK: `piphi-runtime-kit-python==0.3.1`
+- local test helper during development: `piphi-runtime-testkit-python`
+
+You do not need a sibling checkout of the runtime SDK just to run the
+integration. The local testkit path dependency is only used for the repo's
+dev/test workflow.
 
 ## Supported starter profiles
 
-The initial scaffold includes a small profile system so the integration starts
-generic instead of weather-only.
+The starter profile layer keeps the runtime useful before it becomes deeply
+device-specific.
 
 - `weather_basic`
 - `contact_sensor`
 - `leak_sensor`
 - `generic_sensor`
 
-You can add more profiles over time as you support more `rtl_433` device
+You can expand the profile set over time as you support more `rtl_433` device
 families.
 
 ## Project layout
@@ -37,14 +44,12 @@ families.
 - `src/manifest.json` PiPhi integration manifest
 - `src/behaviors.json` optional behavior metadata for PiPhi UI
 - `src/piphi_network_433mhz/app.py` FastAPI runtime
-- `src/piphi_network_433mhz/profiles.py` device profile inference and metric mapping
-- `tests/` small starter tests
+- `src/piphi_network_433mhz/profiles.py` profile inference and metric mapping
+- `tests/` runtime and profile tests
 
 ## Local development
 
-This repo expects a sibling checkout of `piphi-runtime-kit-python`.
-
-Install dependencies with PDM:
+Install dependencies:
 
 ```bash
 pdm install -G dev
@@ -57,6 +62,12 @@ pdm run dev
 ```
 
 The runtime starts on `http://127.0.0.1:8090`.
+
+Run tests:
+
+```bash
+pdm run pytest -q
+```
 
 ## Important routes
 
@@ -72,10 +83,12 @@ The runtime starts on `http://127.0.0.1:8090`.
 - `POST /command`
 - `POST /ingest/rtl433`
 
-## Optional MQTT Source Subscription
+## Packet sources
 
-If you enable MQTT for the bridge, this runtime can also subscribe to the
-shared source topic instead of relying only on direct helper HTTP posts.
+The runtime can consume packets in two ways:
+
+- direct HTTP posts to `/ingest/rtl433`
+- optional MQTT subscription to the shared source topic
 
 Shared packet topic:
 
@@ -90,8 +103,8 @@ Useful environment variables:
 - `MQTT_PORT=1883`
 - `MQTT_TOPIC_ROOT=piphi/sources/rtl433`
 
-This runtime uses the packet envelope's `packet` field and then runs the same
-normalization path as the HTTP ingest route.
+When MQTT is enabled, the runtime reads the packet envelope's `packet` field
+and then runs the same normalization path used by the HTTP ingest route.
 
 ## Example packet ingest
 
@@ -110,16 +123,11 @@ curl -X POST http://127.0.0.1:8090/ingest/rtl433 \
 
 ## Notes
 
-- This scaffold focuses on the main runtime, not the helper container itself.
-- The manifest includes an example `rtl433_ingest` extension/helper so Core can
-  model the sidecar relationship.
-- Linux is the initial target because `rtl_433` helper containers fit that path
-  best.
+- The main runtime does not talk to SDR hardware directly.
+- The manifest includes an example `rtl433_ingest` extension/helper so Core can model the sidecar relationship.
+- Linux is the initial target because the helper/container story is strongest there.
 
 ## Hardware access notes
-
-The main runtime does not talk to SDR hardware directly.
-That work belongs to the `rtl433_ingest` helper container.
 
 For real RTL-SDR use on Linux, the helper usually needs:
 
@@ -129,6 +137,5 @@ For real RTL-SDR use on Linux, the helper usually needs:
 - `privileged: true`
 - an explicit USB device mapping such as `/dev/bus/usb`
 
-This scaffold now shows that device mapping directly in `src/manifest.json`.
-That makes the SDR requirement visible in the manifest instead of hiding it in
-setup docs alone.
+That hardware contract is now reflected directly in `src/manifest.json` so the
+SDR requirement is visible in the manifest as well as in setup docs.
