@@ -26,4 +26,6 @@ distribution = false
 
 [tool.pdm.scripts]
 dev = "uvicorn piphi_network_433mhz.app:app --host 0.0.0.0 --port 8090 --reload"
+release-version = "python scripts/release.py"
+release-github = "python scripts/create_github_release.py"
 test = "pytest"
