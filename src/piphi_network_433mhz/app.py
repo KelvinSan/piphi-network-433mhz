@@ -30,6 +30,8 @@ from piphi_runtime_kit_python import (
     build_local_event_record,
     create_tracked_task,
     create_runtime_starter,
+    rehydrate_runtime_configs,
+    resolve_core_base_url,
     runtime_lifespan,
     schedule_telemetry_delivery,
     validate_typed_configs,
@@ -74,6 +76,7 @@ starter = create_runtime_starter(
     integration_id=INTEGRATION_ID,
     integration_name=INTEGRATION_NAME,
     version=INTEGRATION_VERSION,
+    core_base_url=resolve_core_base_url("http://127.0.0.1:31419"),
 )
 runtime = starter.runtime
 registry = starter.registry
@@ -228,6 +231,37 @@ def now_iso() -> str:
 
 
 async def startup_sync(_runtime_context, _client) -> None:
+    result = await rehydrate_runtime_configs(
+        runtime_context=_runtime_context,
+        client=_client,
+        apply_snapshot=apply_runtime_config_snapshot,
+        config_model=Rtl433DeviceConfig,
+        snapshot_model=RuntimeConfigSnapshot,
+        core_base_url=starter.core_base_url,
+    )
+
+    if result.snapshot_applied:
+        print(
+            "rtl433_startup_rehydrate_complete "
+            f"loaded={result.snapshot_config_count} "
+            f"generation={result.snapshot_generation} "
+            "source=snapshot"
+        )
+
+    if result.core_applied:
+        print(
+            "rtl433_startup_rehydrate_complete "
+            f"loaded={result.core_config_count} "
+            f"generation={result.core_generation} "
+            "source=core"
+        )
+    elif result.core_error:
+        print(f"rtl433_startup_core_rehydrate_failed error={result.core_error}")
+    elif result.missing_runtime_auth:
+        print("rtl433_startup_missing_runtime_credentials standalone_mode=true")
+    elif result.core_attempted:
+        print("rtl433_startup_rehydrate_no_configs")
+
     if not MQTT_SOURCE_ENABLED:
         return
     mqtt_client = MqttJsonClient(
@@ -369,12 +403,9 @@ async def config(
     )
 
 
-@app.post("/config/sync")
-async def sync_config(
+async def apply_runtime_config_snapshot(
     snapshot: RuntimeConfigSnapshot,
-    request: Request,
 ) -> RuntimeConfigSyncResponse:
-    runtime.auth.sync_from_headers(request.headers, payload_container_id=snapshot.container_id)
     typed_configs = validate_typed_configs(
         [
             config.model_dump() if isinstance(config, RuntimeConfig) else config
@@ -389,6 +420,15 @@ async def sync_config(
         remove_config=remove_config,
         get_active_config_ids=registry.ids,
     )
+
+
+@app.post("/config/sync")
+async def sync_config(
+    snapshot: RuntimeConfigSnapshot,
+    request: Request,
+) -> RuntimeConfigSyncResponse:
+    runtime.auth.sync_from_headers(request.headers, payload_container_id=snapshot.container_id)
+    return await apply_runtime_config_snapshot(snapshot)
 
 
 @app.post("/deconfigure/{config_id}")
