@@ -1,0 +1,227 @@
+name: Release 433MHz Integration to Docker Hub
+
+run-name: >-
+  433MHz integration release
+  (${{ inputs.release_type }}
+  ${{ inputs.release_type == 'custom' && inputs.custom_version || inputs.preid }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: Semantic version action
+        required: true
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - prepatch
+          - preminor
+          - premajor
+          - prerelease
+          - release
+          - custom
+      preid:
+        description: Prerelease channel for pre* and prerelease actions
+        required: true
+        default: alpha
+        type: choice
+        options:
+          - alpha
+          - beta
+          - rc
+      custom_version:
+        description: Explicit semantic version when release_type is custom
+        required: false
+        type: string
+      push_latest:
+        description: Also publish the latest tag for stable releases
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: 433mhz-integration-release-${{ github.event.repository.full_name }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_IMAGE: piphinetwork/piphi-network-433mhz
+  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_USERNAME || secrets.DOCKER_USERNAME }}
+  DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN != '' && secrets.DOCKERHUB_TOKEN || secrets.DOCKER_PASSWORD }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref_name }}
+
+      - name: Require default branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_NAME}" != "${{ github.event.repository.default_branch }}" ]]; then
+            echo "Releases must be triggered from ${{ github.event.repository.default_branch }}." >&2
+            exit 1
+          fi
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PDM
+        run: python -m pip install --upgrade pdm
+
+      - name: Install dev dependencies
+        run: pdm install -G dev --frozen-lockfile
+
+      - name: Run test suite
+        env:
+          PYTHONPATH: src
+        run: pdm run pytest -q
+
+      - name: Resolve release version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ inputs.release_type }}" == "custom" ]]; then
+            if [[ -z "${{ inputs.custom_version }}" ]]; then
+              echo "custom_version is required when release_type=custom" >&2
+              exit 1
+            fi
+            VERSION=$(python scripts/release.py --set-version "${{ inputs.custom_version }}" --docker-image "${{ env.RELEASE_IMAGE }}")
+          else
+            VERSION=$(python scripts/release.py --bump "${{ inputs.release_type }}" --preid "${{ inputs.preid }}" --docker-image "${{ env.RELEASE_IMAGE }}")
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [[ "$VERSION" == *-* ]]; then
+            echo "stable=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "stable=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Resolved version: $VERSION"
+
+      - name: Reject latest on prereleases
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ inputs.push_latest }}" == "true" && "${{ steps.version.outputs.stable }}" != "true" ]]; then
+            echo "latest can only be published for stable releases." >&2
+            exit 1
+          fi
+
+      - name: Fail if release tag already exists
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="v${{ steps.version.outputs.version }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists locally." >&2
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists on origin." >&2
+            exit 1
+          fi
+
+      - name: Commit release metadata locally
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml src/manifest.json
+          git commit -m "release: v${{ steps.version.outputs.version }}"
+          git tag "v${{ steps.version.outputs.version }}"
+
+      - name: Capture release revision
+        id: git
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to Docker Hub
+        if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ env.DOCKERHUB_USERNAME }}
+          password: ${{ env.DOCKERHUB_TOKEN }}
+
+      - name: Require Docker Hub credentials
+        if: ${{ env.DOCKERHUB_USERNAME == '' || env.DOCKERHUB_TOKEN == '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Set DOCKERHUB_USERNAME/DOCKERHUB_TOKEN or DOCKER_USERNAME/DOCKER_PASSWORD secrets before releasing." >&2
+          exit 1
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Prepare image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.RELEASE_IMAGE }}
+          tags: |
+            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=latest,enable=${{ inputs.push_latest && steps.version.outputs.stable == 'true' }}
+          labels: |
+            org.opencontainers.image.title=PiPhi Network 433MHz Devices
+            org.opencontainers.image.description=PiPhi runtime integration for rtl_433-compatible sub-GHz sensors and devices.
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ steps.git.outputs.sha }}
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=min
+
+      - name: Push release commit and tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          git push origin HEAD:${GITHUB_REF_NAME}
+          git push origin "v${{ steps.version.outputs.version }}"
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          prerelease: ${{ steps.version.outputs.stable != 'true' }}
+          name: v${{ steps.version.outputs.version }}
+
+      - name: Release summary
+        shell: bash
+        run: |
+          echo "Published ${{ env.RELEASE_IMAGE }}:${{ steps.version.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "${{ inputs.push_latest }}" == "true" && "${{ steps.version.outputs.stable }}" == "true" ]]; then
+            echo "Published ${{ env.RELEASE_IMAGE }}:latest" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "Committed pyproject.toml and src/manifest.json at version ${{ steps.version.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Release revision: ${{ steps.git.outputs.sha }}" >> "$GITHUB_STEP_SUMMARY"

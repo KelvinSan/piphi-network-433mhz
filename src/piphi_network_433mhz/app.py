@@ -30,7 +30,6 @@ from piphi_runtime_kit_python import (
     build_local_event_record,
     create_tracked_task,
     create_runtime_starter,
-    rehydrate_runtime_configs,
     resolve_core_base_url,
     runtime_lifespan,
     schedule_telemetry_delivery,
@@ -231,13 +230,11 @@ def now_iso() -> str:
 
 
 async def startup_sync(_runtime_context, _client) -> None:
-    result = await rehydrate_runtime_configs(
-        runtime_context=_runtime_context,
+    result = await starter.rehydrate_configs(
         client=_client,
         apply_snapshot=apply_runtime_config_snapshot,
         config_model=Rtl433DeviceConfig,
         snapshot_model=RuntimeConfigSnapshot,
-        core_base_url=starter.core_base_url,
     )
 
     if result.snapshot_applied:

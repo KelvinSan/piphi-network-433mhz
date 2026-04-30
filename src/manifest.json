@@ -3,18 +3,18 @@
   "id": "piphi-network-433mhz",
   "name": "PiPhi Network 433MHz Devices",
   "version": "0.1.0",
-  "description": "Generic rtl_433-based integration for supported 433MHz sensors and devices.",
+  "description": "Generic rtl_433-based integration for supported sub-GHz sensors and devices.",
   "maintainer": {
     "name": "PiPhi Network",
     "website": "https://piphi.io"
   },
-  "image": "ghcr.io/piphi/piphi-network-433mhz:0.1.0",
+  "image": "piphinetwork/piphi-network-433mhz:0.1.0",
   "platforms": ["linux"],
   "runtime": {
     "linux": {
       "type": "container",
       "container": {
-        "image": "ghcr.io/piphi/piphi-network-433mhz:0.1.0",
+        "image": "piphinetwork/piphi-network-433mhz:0.1.0",
         "ports": [
           { "container": 8090, "host": 8090 }
         ],
@@ -30,6 +30,19 @@
         "method": "passive"
       }
     }
+  },
+  "requires": {
+    "services": [
+      {
+        "id": "piphi.service.rtl433-bridge",
+        "kind": "platform_service",
+        "version_range": ">=0.1.0,<1.0.0",
+        "required": true,
+        "shared": true,
+        "auto_install": true,
+        "reason": "Listens for supported sub-GHz rtl_433 radio packets and forwards decoded packets to this integration."
+      }
+    ]
   },
   "api": {
     "endpoints": {
@@ -83,37 +96,5 @@
     { "id": "contact_open", "name": "Contact Open", "capabilities": ["contact_open"] },
     { "id": "leak_detected", "name": "Leak Detected", "capabilities": ["leak_detected"] },
     { "id": "signal_rssi", "name": "Signal RSSI", "capabilities": ["signal_rssi"] }
-  ],
-  "extensions": [
-    {
-      "id": "rtl433_ingest",
-      "enabled_by_default": true,
-      "type": "event_ingestion",
-      "runtime": {
-        "linux": {
-          "type": "container_sidecar",
-          "container": {
-            "image": "ghcr.io/piphi/rtl433-bridge:0.1.0",
-            "network_mode": "host",
-            "privileged": true,
-            "devices": [
-              {
-                "host": "/dev/bus/usb",
-                "container": "/dev/bus/usb",
-                "permissions": "rwm"
-              }
-            ],
-            "restart_policy": {
-              "name": "unless-stopped",
-              "maximum_retry_count": 0
-            }
-          }
-        }
-      },
-      "outputs": {
-        "endpoint": "/ingest/rtl433",
-        "event_type": "rtl433_packet"
-      }
-    }
   ]
 }

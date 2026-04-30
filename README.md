@@ -1,10 +1,10 @@
 # piphi-network-433mhz
 
-PiPhi integration for `rtl_433` compatible 433 MHz devices.
+PiPhi integration for `rtl_433` compatible sub-GHz devices.
 
 This runtime is built on the published Python SDK, `piphi-runtime-kit-python`,
-and is designed to work alongside a separate `rtl_433` helper that listens for
-radio packets and forwards decoded JSON into the runtime.
+and is designed to work alongside the shared `rtl_433 Radio Bridge` platform
+service that listens for radio packets and forwards decoded JSON into the runtime.
 
 ## What this integration does
 
@@ -19,7 +19,7 @@ radio packets and forwards decoded JSON into the runtime.
 
 This integration now installs the published runtime kit directly from PyPI:
 
-- runtime SDK: `piphi-runtime-kit-python==0.3.1`
+- runtime SDK: `piphi-runtime-kit-python[fastapi,mqtt]==0.4.6`
 - local test helper during development: `piphi-runtime-testkit-python`
 
 You do not need a sibling checkout of the runtime SDK just to run the
@@ -124,7 +124,7 @@ curl -X POST http://127.0.0.1:8090/ingest/rtl433 \
 ## Notes
 
 - The main runtime does not talk to SDR hardware directly.
-- The manifest includes an example `rtl433_ingest` extension/helper so Core can model the sidecar relationship.
+- The manifest requires the shared `piphi.service.rtl433-bridge` platform service so Core can install or reuse the radio bridge.
 - Linux is the initial target because the helper/container story is strongest there.
 
 ## Hardware access notes
@@ -137,5 +137,5 @@ For real RTL-SDR use on Linux, the helper usually needs:
 - `privileged: true`
 - an explicit USB device mapping such as `/dev/bus/usb`
 
-That hardware contract is now reflected directly in `src/manifest.json` so the
-SDR requirement is visible in the manifest as well as in setup docs.
+That hardware contract lives on the shared `rtl_433 Radio Bridge` service. This
+integration depends on that service instead of embedding a private sidecar.

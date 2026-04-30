@@ -5,7 +5,7 @@
 groups = ["default", "dev"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:d56e543b99618962a3d83cf9d81c7aaca198c5b70e81581b7dd51758a1c7acb6"
+content_hash = "sha256:d7de2b78250261bc317a39d6ec0192353156362267ac56285a3b5bd7fa99063c"
 
 [[metadata.targets]]
 requires_python = "==3.12.*"
@@ -419,7 +419,7 @@ files = [
 
 [[package]]
 name = "piphi-runtime-kit-python"
-version = "0.4.5"
+version = "0.4.6"
 requires_python = ">=3.11"
 summary = "PiPhi Network runtime integration helpers"
 groups = ["default"]
@@ -428,13 +428,13 @@ dependencies = [
     "pydantic<3.0,>=2.8",
 ]
 files = [
-    {file = "piphi_runtime_kit_python-0.4.5-py3-none-any.whl", hash = "sha256:153d7441c81d67703d57287435b3a55a04df987311bb68f3a73ac182dceba1e3"},
-    {file = "piphi_runtime_kit_python-0.4.5.tar.gz", hash = "sha256:123a569a343f4fbdc6008afb91cea8d5bb0a941d52095cfa20b6860e76862b55"},
+    {file = "piphi_runtime_kit_python-0.4.6-py3-none-any.whl", hash = "sha256:94537fb010ab5047bb85f380763f425776b63932755c04a04e2c1618652b5274"},
+    {file = "piphi_runtime_kit_python-0.4.6.tar.gz", hash = "sha256:72dcb0e78d7ec570b6e9a459a42e903013f3a4067bb9049152362523fc9d0e7a"},
 ]
 
 [[package]]
 name = "piphi-runtime-kit-python"
-version = "0.4.5"
+version = "0.4.6"
 extras = ["fastapi", "mqtt"]
 requires_python = ">=3.11"
 summary = "PiPhi Network runtime integration helpers"
@@ -442,16 +442,16 @@ groups = ["default"]
 dependencies = [
     "aiomqtt<3.0,>=2.4",
     "fastapi<1.0,>=0.115",
-    "piphi-runtime-kit-python==0.4.5",
+    "piphi-runtime-kit-python==0.4.6",
 ]
 files = [
-    {file = "piphi_runtime_kit_python-0.4.5-py3-none-any.whl", hash = "sha256:153d7441c81d67703d57287435b3a55a04df987311bb68f3a73ac182dceba1e3"},
-    {file = "piphi_runtime_kit_python-0.4.5.tar.gz", hash = "sha256:123a569a343f4fbdc6008afb91cea8d5bb0a941d52095cfa20b6860e76862b55"},
+    {file = "piphi_runtime_kit_python-0.4.6-py3-none-any.whl", hash = "sha256:94537fb010ab5047bb85f380763f425776b63932755c04a04e2c1618652b5274"},
+    {file = "piphi_runtime_kit_python-0.4.6.tar.gz", hash = "sha256:72dcb0e78d7ec570b6e9a459a42e903013f3a4067bb9049152362523fc9d0e7a"},
 ]
 
 [[package]]
 name = "piphi-runtime-testkit-python"
-version = "0.1.0"
+version = "0.1.3"
 requires_python = ">=3.11"
 path = "../piphi-runtime-testkit-python"
 summary = "Pytest-first helpers for testing PiPhi runtime integrations"
