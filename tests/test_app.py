@@ -17,6 +17,7 @@ app_module = importlib.import_module("piphi_network_433mhz.app")
 
 def reset_runtime_state() -> None:
     recent_seen_devices.clear()
+    app_module.discovery_waiters.clear()
     registry.entries.clear()
     registry.state_snapshots.clear()
     registry.recent_events.clear()
@@ -86,6 +87,52 @@ def test_discover_can_filter_by_profile() -> None:
     assert len(devices) == 1
     assert devices[0]["profile"] == "contact_sensor"
     assert devices[0]["station_id"] == "7"
+
+
+def test_discover_waits_for_next_packet_when_cache_is_empty(monkeypatch) -> None:
+    reset_runtime_state()
+    monkeypatch.setattr(app_module, "DISCOVERY_WAIT_SECONDS", 1.0)
+    monkeypatch.setattr(app_module, "persist_discovery_cache", lambda: None)
+
+    async def run() -> list[dict[str, object]]:
+        discovery_task = asyncio.create_task(app_module.wait_for_discovery_devices())
+        await asyncio.sleep(0.05)
+        await app_module.process_rtl433_packet(
+            {
+                "model": "Nexus-TH",
+                "id": 42,
+                "temperature_C": 23.1,
+                "humidity": 51,
+            },
+            source_transport="http",
+        )
+        return await discovery_task
+
+    devices = asyncio.run(run())
+
+    assert len(devices) == 1
+    assert devices[0]["device_id"] == "Nexus-TH::42::na"
+
+
+def test_discovery_cache_round_trip(tmp_path, monkeypatch) -> None:
+    reset_runtime_state()
+    cache_path = tmp_path / "discovery.json"
+    monkeypatch.setattr(app_module, "DISCOVERY_CACHE_PATH", cache_path)
+
+    app_module.remember_discovered_device(
+        {
+            "model": "Nexus-TH",
+            "id": 42,
+            "temperature_C": 23.1,
+            "humidity": 51,
+        }
+    )
+    recent_seen_devices.clear()
+    app_module.load_discovery_cache()
+
+    devices = list(recent_seen_devices.values())
+    assert len(devices) == 1
+    assert devices[0]["device_id"] == "Nexus-TH::42::na"
 
 
 def test_config_entities_state_and_deconfigure_round_trip() -> None:

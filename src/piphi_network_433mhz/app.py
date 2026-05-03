@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+import json
 import os
+from pathlib import Path
+import time
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -56,10 +60,32 @@ def _env_flag(name: str, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _env_float(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
+
+
+def _resolve_discovery_cache_path() -> Path | None:
+    value = os.getenv("RTL433_DISCOVERY_CACHE_PATH")
+    if value is not None and not value.strip():
+        return None
+    return Path(value or "/tmp/piphi-network-433mhz-discovery.json")
+
+
 INTEGRATION_ID = "piphi-network-433mhz"
 INTEGRATION_NAME = "PiPhi Network 433MHz Devices"
 INTEGRATION_VERSION = "0.1.0"
 MAX_DISCOVERY_CACHE = 200
+DISCOVERY_WAIT_SECONDS = max(
+    0.0,
+    min(_env_float("RTL433_DISCOVERY_WAIT_SECONDS", 8.0), 18.0),
+)
+DISCOVERY_CACHE_PATH = _resolve_discovery_cache_path()
 MQTT_SOURCE_ENABLED = _env_flag("RTL433_MQTT_ENABLED", False)
 MQTT_BROKER_HOSTNAME = os.getenv("MQTT_HOSTNAME", "127.0.0.1")
 MQTT_BROKER_PORT = int(os.getenv("MQTT_PORT", "1883"))
@@ -82,6 +108,7 @@ registry = starter.registry
 telemetry = starter.telemetry_client
 config_sync = starter.config_sync
 recent_seen_devices: OrderedDict[str, dict[str, Any]] = OrderedDict()
+discovery_waiters: set[tuple[asyncio.AbstractEventLoop, asyncio.Event]] = set()
 
 
 class Rtl433DeviceConfig(RuntimeConfig):
@@ -222,6 +249,8 @@ def remember_discovered_device(packet: dict[str, Any]) -> dict[str, Any]:
     recent_seen_devices.move_to_end(device_key)
     while len(recent_seen_devices) > MAX_DISCOVERY_CACHE:
         recent_seen_devices.popitem(last=False)
+    persist_discovery_cache()
+    notify_discovery_waiters()
     return record
 
 
@@ -229,7 +258,103 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def persist_discovery_cache() -> None:
+    if not DISCOVERY_CACHE_PATH:
+        return
+
+    payload = {
+        "version": 1,
+        "updated_at": now_iso(),
+        "devices": list(recent_seen_devices.values()),
+    }
+    try:
+        DISCOVERY_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = DISCOVERY_CACHE_PATH.with_suffix(f"{DISCOVERY_CACHE_PATH.suffix}.tmp")
+        tmp_path.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
+        tmp_path.replace(DISCOVERY_CACHE_PATH)
+    except OSError as exc:
+        print(f"rtl433_discovery_cache_persist_failed path={DISCOVERY_CACHE_PATH} error={exc}")
+
+
+def load_discovery_cache() -> None:
+    if not DISCOVERY_CACHE_PATH:
+        return
+
+    if not DISCOVERY_CACHE_PATH.exists():
+        return
+
+    try:
+        payload = json.loads(DISCOVERY_CACHE_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        print(f"rtl433_discovery_cache_load_failed path={DISCOVERY_CACHE_PATH} error={exc}")
+        return
+
+    devices = payload.get("devices") if isinstance(payload, dict) else None
+    if not isinstance(devices, list):
+        return
+
+    recent_seen_devices.clear()
+    for item in devices[-MAX_DISCOVERY_CACHE:]:
+        if not isinstance(item, dict):
+            continue
+        device_id = str(item.get("device_id") or item.get("id") or "").strip()
+        if not device_id:
+            continue
+        recent_seen_devices[device_id] = item
+    print(f"rtl433_discovery_cache_loaded count={len(recent_seen_devices)} path={DISCOVERY_CACHE_PATH}")
+
+
+def notify_discovery_waiters() -> None:
+    for loop, event in list(discovery_waiters):
+        if loop.is_closed():
+            discovery_waiters.discard((loop, event))
+            continue
+        loop.call_soon_threadsafe(event.set)
+
+
+def filter_recent_devices(requested_profile: Any = None) -> list[dict[str, Any]]:
+    devices = list(recent_seen_devices.values())
+    if requested_profile:
+        profile = str(requested_profile)
+        devices = [device for device in devices if device.get("profile") == profile]
+    return devices
+
+
+async def wait_for_discovery_devices(requested_profile: Any = None) -> list[dict[str, Any]]:
+    devices = filter_recent_devices(requested_profile)
+    if devices or DISCOVERY_WAIT_SECONDS <= 0:
+        return devices
+
+    deadline = time.monotonic() + DISCOVERY_WAIT_SECONDS
+    loop = asyncio.get_running_loop()
+    event = asyncio.Event()
+    waiter = (loop, event)
+    discovery_waiters.add(waiter)
+
+    try:
+        while time.monotonic() < deadline:
+            devices = filter_recent_devices(requested_profile)
+            if devices:
+                return devices
+
+            remaining = max(0.0, deadline - time.monotonic())
+            if remaining <= 0:
+                break
+
+            event.clear()
+            try:
+                await asyncio.wait_for(event.wait(), timeout=remaining)
+            except TimeoutError:
+                break
+    finally:
+        discovery_waiters.discard(waiter)
+
+    return filter_recent_devices(requested_profile)
+
+
 async def startup_sync(_runtime_context, _client) -> None:
+    load_discovery_cache()
+
     result = await starter.rehydrate_configs(
         client=_client,
         apply_snapshot=apply_runtime_config_snapshot,
@@ -377,9 +502,7 @@ async def discover(
     if payload and payload.inputs:
         requested_profile = payload.inputs.get("profile")
 
-    devices = list(recent_seen_devices.values())
-    if requested_profile:
-        devices = [device for device in devices if device.get("profile") == requested_profile]
+    devices = await wait_for_discovery_devices(requested_profile)
     return build_discovery_response(devices)
 
 
@@ -477,6 +600,7 @@ async def command(payload: IntegrationCommandRequest) -> dict[str, Any]:
     if payload.command == "clear_discovery_cache":
         count = len(recent_seen_devices)
         recent_seen_devices.clear()
+        persist_discovery_cache()
         return {
             "status": "ok",
             "command": payload.command,

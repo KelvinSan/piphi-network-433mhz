@@ -24,7 +24,9 @@
           }
         ],
         "environment": {
-          "LOG_LEVEL": "info"
+          "LOG_LEVEL": "info",
+          "RTL433_DISCOVERY_WAIT_SECONDS": "8",
+          "RTL433_DISCOVERY_CACHE_PATH": "/tmp/piphi-network-433mhz-discovery.json"
         },
         "restart_policy": {
           "name": "unless-stopped",
