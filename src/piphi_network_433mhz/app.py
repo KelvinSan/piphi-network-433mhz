@@ -79,7 +79,7 @@ def _resolve_discovery_cache_path() -> Path | None:
 
 INTEGRATION_ID = "piphi-network-433mhz"
 INTEGRATION_NAME = "PiPhi Network 433MHz Devices"
-INTEGRATION_VERSION = "0.1.1"
+INTEGRATION_VERSION = "0.1.2"
 MAX_DISCOVERY_CACHE = 200
 DISCOVERY_WAIT_SECONDS = max(
     0.0,
@@ -112,7 +112,7 @@ discovery_waiters: set[tuple[asyncio.AbstractEventLoop, asyncio.Event]] = set()
 
 
 class Rtl433DeviceConfig(RuntimeConfig):
-    profile: str
+    profile: str = "auto"
     model: str
     station_id: str
     channel: str | None = None
@@ -455,13 +455,17 @@ async def ui_config() -> dict[str, Any]:
                 "and you can leave the channel blank if you do not know it."
             ),
             "type": "object",
-            "required": ["profile", "model", "station_id"],
+            "required": ["model", "station_id"],
             "properties": {
                 "profile": {
                     "type": "string",
                     "title": "Device type",
-                    "description": "Choose the closest match so PiPhi knows which readings to show.",
+                    "description": (
+                        "Auto-detect is recommended. PiPhi will record safe decoded readings "
+                        "from each radio packet."
+                    ),
                     "enum": profile_ids,
+                    "default": "auto",
                 },
                 "model": {
                     "type": "string",
@@ -506,7 +510,7 @@ async def ui_config() -> dict[str, Any]:
                 "ui:options": {
                     "enumNames": profile_names,
                     "flowbite3Select": {
-                        "placeholder": "Choose a device type",
+                        "placeholder": "Auto-detect",
                     },
                 },
             },
@@ -562,12 +566,14 @@ async def config(
 ) -> RuntimeConfigApplyResponse:
     sync_runtime_auth_from_fastapi_payload(runtime, request, payload)
     await apply_config(payload)
+    device_key = build_device_key(payload.model, payload.station_id, payload.channel)
     return build_config_apply_response(
         config_id=_optional_config_attr(payload, "config_id") or payload.id,
         container_id=_optional_config_attr(payload, "container_id"),
         metadata={
             "profile": normalize_profile_id(payload.profile),
-            "device_key": build_device_key(payload.model, payload.station_id, payload.channel),
+            "device_id": device_key,
+            "device_key": device_key,
         },
     )
 
@@ -620,6 +626,7 @@ async def entities() -> list[dict[str, Any]]:
                 device_name=device_name,
                 device_key=str(entry["device_id"]),
                 profile_id=str(entry.get("profile") or "generic_sensor"),
+                metric_names=list(entry.get("observed_metrics") or []),
             )
         )
     return payload
@@ -690,8 +697,17 @@ async def process_rtl433_packet(
             continue
 
         matched_configs += 1
-        profile_id = str(entry.get("profile") or "generic_sensor")
+        configured_profile_id = normalize_profile_id(str(entry.get("profile") or "auto"))
+        inferred_profile_id = str(discovered.get("profile") or "generic_sensor")
+        profile_id = (
+            inferred_profile_id
+            if configured_profile_id in {"auto", "generic_sensor"} and inferred_profile_id != "generic_sensor"
+            else configured_profile_id
+        )
+        if profile_id != entry.get("profile"):
+            entry["profile"] = profile_id
         metrics = extract_metrics(payload, profile_id)
+        entry["observed_metrics"] = sorted(metrics.keys())
         registry.update_state(
             config_id,
             {
@@ -701,6 +717,7 @@ async def process_rtl433_packet(
                 "channel": discovered["channel"],
                 "profile": profile_id,
                 "last_metrics": metrics,
+                "observed_metrics": entry["observed_metrics"],
             },
         )
 

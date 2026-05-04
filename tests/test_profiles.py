@@ -60,6 +60,8 @@ def test_extract_weather_metrics_prefers_first_matching_fields() -> None:
             "rain_mm": 4.2,
             "battery_ok": 1,
             "rssi": -70,
+            "pressure_hPa": 1009.8,
+            "unknown1": 99,
         },
         "weather_basic",
     )
@@ -69,11 +71,14 @@ def test_extract_weather_metrics_prefers_first_matching_fields() -> None:
     assert metrics["wind_speed_kph"] == 12.0
     assert metrics["rain_total_mm"] == 4.2
     assert metrics["signal_rssi"] == -70
+    assert metrics["pressure_hpa"] == 1009.8
+    assert "unknown1" not in metrics
+    assert "id" not in metrics
 
 
 def test_normalize_profile_id_falls_back_for_unknown_values() -> None:
-    assert normalize_profile_id("not-a-real-profile") == "generic_sensor"
-    assert normalize_profile_id(None) == "generic_sensor"
+    assert normalize_profile_id("not-a-real-profile") == "auto"
+    assert normalize_profile_id(None) == "auto"
 
 
 def test_build_entities_and_metric_units_follow_profile_definition() -> None:

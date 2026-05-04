@@ -92,14 +92,15 @@ def test_ui_config_presents_channel_as_optional_and_user_friendly() -> None:
     ui_schema = payload["uiSchema"]
 
     assert schema["title"] == "Wireless Sensor Setup"
-    assert schema["required"] == ["profile", "model", "station_id"]
+    assert schema["required"] == ["model", "station_id"]
     assert schema["properties"]["profile"]["title"] == "Device type"
+    assert schema["properties"]["profile"]["default"] == "auto"
     assert "enumNames" not in schema["properties"]["profile"]
     assert schema["properties"]["channel"]["title"] == "Channel (optional)"
     assert schema["properties"]["channel"]["default"] == ""
     assert "leave the channel blank" in schema["description"]
     assert ui_schema["profile"]["ui:components"]["stringField"] == "enumField"
-    assert ui_schema["profile"]["ui:options"]["enumNames"][0] == "Generic Sensor"
+    assert ui_schema["profile"]["ui:options"]["enumNames"][0] == "Auto-detect"
     assert ui_schema["ui:options"]["translations"]["submit"] == "Save Device"
 
 
@@ -201,6 +202,7 @@ def test_config_entities_state_and_deconfigure_round_trip() -> None:
 
     assert config_response.status_code == 200
     assert config_response.json()["status"] == "configured"
+    assert config_response.json()["metadata"]["device_id"] == "Nexus-TH::42::1"
     assert config_response.json()["metadata"]["device_key"] == "Nexus-TH::42::1"
 
     entities = entities_response.json()
@@ -268,6 +270,61 @@ def test_ingest_matching_config_updates_state_and_emits_event(monkeypatch) -> No
 
     event_types = [event["event_type"] for event in events_response.json()["events"]]
     assert "rtl433.packet.matched" in event_types
+
+
+def test_ingest_generic_config_uses_inferred_weather_metrics(monkeypatch) -> None:
+    reset_runtime_state()
+    client = TestClient(app)
+    telemetry_calls: list[dict[str, object]] = []
+
+    def fake_schedule_telemetry_delivery(**kwargs) -> None:
+        telemetry_calls.append(kwargs)
+
+    monkeypatch.setattr(
+        app_module,
+        "schedule_telemetry_delivery",
+        fake_schedule_telemetry_delivery,
+    )
+
+    client.post(
+        "/config",
+        json={
+            "id": "cfg-weather-generic",
+            "profile": "generic_sensor",
+            "model": "Fineoffset-WH0290",
+            "station_id": "62",
+            "alias": "Weather Sensor",
+        },
+    )
+
+    ingest_response = client.post(
+        "/ingest/rtl433",
+        json={
+            "model": "Fineoffset-WH0290",
+            "id": 62,
+            "temperature_C": 21.5,
+            "humidity": 48,
+            "pressure_hPa": 1009.8,
+            "battery_ok": 1,
+        },
+    )
+    entities_response = client.get("/entities")
+
+    assert ingest_response.status_code == 200
+    assert ingest_response.json()["profile"] == "weather_basic"
+    assert telemetry_calls[0]["metrics"] == {
+        "temperature_c": 21.5,
+        "humidity_percent": 48,
+        "pressure_hpa": 1009.8,
+        "battery_ok": 1,
+    }
+    assert telemetry_calls[0]["units"] == {
+        "temperature_c": "C",
+        "humidity_percent": "%",
+        "pressure_hpa": "hPa",
+    }
+    assert any(entity["id"] == "Fineoffset-WH0290::62::na.temperature_c" for entity in entities_response.json())
+    assert any(entity["id"] == "Fineoffset-WH0290::62::na.pressure_hpa" for entity in entities_response.json())
 
 
 def test_ingest_matching_config_sends_telemetry_to_mock_core(

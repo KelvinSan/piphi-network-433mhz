@@ -84,7 +84,6 @@
       "device_id"
     ],
     "identity_fields": [
-      "profile",
       "model",
       "station_id",
       "channel"
@@ -92,7 +91,6 @@
   },
   "identity": {
     "fields": [
-      "profile",
       "model",
       "station_id",
       "channel"
