@@ -58,6 +58,51 @@ def test_discover_returns_recent_seen_device() -> None:
     assert devices[0]["profile"] == "weather_basic"
 
 
+def test_discover_uses_blank_channel_when_packet_has_no_channel() -> None:
+    reset_runtime_state()
+    client = TestClient(app)
+
+    client.post(
+        "/ingest/rtl433",
+        json={
+            "model": "Fineoffset-WH0290",
+            "id": 62,
+            "temperature_C": 23.1,
+            "humidity": 51,
+        },
+    )
+
+    discover_response = client.post("/discover", json={"inputs": {}})
+
+    assert discover_response.status_code == 200
+    devices = discover_response.json()["devices"]
+    assert devices[0]["device_id"] == "Fineoffset-WH0290::62::na"
+    assert devices[0]["channel"] == ""
+
+
+def test_ui_config_presents_channel_as_optional_and_user_friendly() -> None:
+    reset_runtime_state()
+    client = TestClient(app)
+
+    response = client.get("/ui-config")
+
+    assert response.status_code == 200
+    payload = response.json()
+    schema = payload["schema"]
+    ui_schema = payload["uiSchema"]
+
+    assert schema["title"] == "Wireless Sensor Setup"
+    assert schema["required"] == ["profile", "model", "station_id"]
+    assert schema["properties"]["profile"]["title"] == "Device type"
+    assert "enumNames" not in schema["properties"]["profile"]
+    assert schema["properties"]["channel"]["title"] == "Channel (optional)"
+    assert schema["properties"]["channel"]["default"] == ""
+    assert "leave the channel blank" in schema["description"]
+    assert ui_schema["profile"]["ui:components"]["stringField"] == "enumField"
+    assert ui_schema["profile"]["ui:options"]["enumNames"][0] == "Generic Sensor"
+    assert ui_schema["ui:options"]["translations"]["submit"] == "Save Device"
+
+
 def test_discover_can_filter_by_profile() -> None:
     reset_runtime_state()
     client = TestClient(app)

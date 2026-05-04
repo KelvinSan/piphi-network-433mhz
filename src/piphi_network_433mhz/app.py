@@ -79,7 +79,7 @@ def _resolve_discovery_cache_path() -> Path | None:
 
 INTEGRATION_ID = "piphi-network-433mhz"
 INTEGRATION_NAME = "PiPhi Network 433MHz Devices"
-INTEGRATION_VERSION = "0.1.0"
+INTEGRATION_VERSION = "0.1.1"
 MAX_DISCOVERY_CACHE = 200
 DISCOVERY_WAIT_SECONDS = max(
     0.0,
@@ -240,7 +240,7 @@ def remember_discovered_device(packet: dict[str, Any]) -> dict[str, Any]:
         "profile_name": PROFILE_DEFINITIONS[profile_id].name,
         "model": model,
         "station_id": station_id,
-        "channel": channel,
+        "channel": channel or "",
         "alias": model,
         "last_seen_at": now_iso(),
         "preview_metrics": metrics,
@@ -300,6 +300,8 @@ def load_discovery_cache() -> None:
         device_id = str(item.get("device_id") or item.get("id") or "").strip()
         if not device_id:
             continue
+        if item.get("channel") is None:
+            item["channel"] = ""
         recent_seen_devices[device_id] = item
     print(f"rtl433_discovery_cache_loaded count={len(recent_seen_devices)} path={DISCOVERY_CACHE_PATH}")
 
@@ -442,52 +444,99 @@ async def diagnostics() -> RuntimeDiagnosticsResponse:
 
 @app.get("/ui-config")
 async def ui_config() -> dict[str, Any]:
+    profile_ids = list(PROFILE_DEFINITIONS.keys())
+    profile_names = [profile.name for profile in PROFILE_DEFINITIONS.values()]
+
     return {
         "schema": {
-            "title": "433MHz Device Setup",
-            "description": "Choose a discovered rtl_433 device and save the identity fields PiPhi should track.",
+            "title": "Wireless Sensor Setup",
+            "description": (
+                "Review the 433 MHz sensor PiPhi heard. Discovery fills most of this in, "
+                "and you can leave the channel blank if you do not know it."
+            ),
             "type": "object",
             "required": ["profile", "model", "station_id"],
             "properties": {
                 "profile": {
                     "type": "string",
-                    "title": "Device Profile",
-                    "enum": list(PROFILE_DEFINITIONS.keys()),
-                    "enumNames": [profile.name for profile in PROFILE_DEFINITIONS.values()],
+                    "title": "Device type",
+                    "description": "Choose the closest match so PiPhi knows which readings to show.",
+                    "enum": profile_ids,
                 },
                 "model": {
                     "type": "string",
-                    "title": "rtl_433 Model",
+                    "title": "Sensor model",
+                    "description": (
+                        "Usually filled from the radio packet. Leave it as discovered unless "
+                        "you know it is wrong."
+                    ),
                 },
                 "station_id": {
                     "type": "string",
-                    "title": "Station or Sensor ID",
+                    "title": "Sensor ID",
+                    "description": "The ID broadcast by the sensor. PiPhi uses it to recognize this device later.",
                 },
                 "channel": {
                     "type": "string",
-                    "title": "Channel",
+                    "title": "Channel (optional)",
+                    "description": (
+                        "Leave blank if you do not know it. This is only needed when several "
+                        "sensors share the same model and ID."
+                    ),
+                    "default": "",
                 },
                 "alias": {
                     "type": "string",
-                    "title": "Display Name",
+                    "title": "Display name",
+                    "description": "A friendly name shown in dashboards and device lists.",
+                    "default": "",
                 },
             },
         },
         "uiSchema": {
+            "ui:options": {
+                "translations": {
+                    "submit": "Save Device",
+                },
+            },
             "profile": {
-                "help": "Pick the profile that best matches the discovered device.",
+                "ui:components": {
+                    "stringField": "enumField",
+                },
+                "ui:options": {
+                    "enumNames": profile_names,
+                    "flowbite3Select": {
+                        "placeholder": "Choose a device type",
+                    },
+                },
             },
             "model": {
-                "placeholder": "Acurite-Tower or Nexus-TH",
+                "ui:options": {
+                    "flowbite3Text": {
+                        "placeholder": "Fineoffset-WH0290",
+                    },
+                },
             },
             "station_id": {
-                "placeholder": "42",
+                "ui:options": {
+                    "flowbite3Text": {
+                        "placeholder": "62",
+                    },
+                },
             },
             "channel": {
-                "placeholder": "1 or A",
+                "ui:options": {
+                    "flowbite3Text": {
+                        "placeholder": "Leave blank if unknown",
+                    },
+                },
             },
             "alias": {
-                "placeholder": "Backyard Weather Sensor",
+                "ui:options": {
+                    "flowbite3Text": {
+                        "placeholder": "Backyard weather sensor",
+                    },
+                },
             },
         },
         "profiles": list_profiles(),
