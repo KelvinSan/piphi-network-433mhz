@@ -726,6 +726,7 @@ async def process_rtl433_packet(
                 process_state=runtime.process_state,
                 telemetry_client=telemetry,
                 auth_context=runtime.auth,
+                config_id=str(entry["config_id"]),
                 device_id=str(entry["device_id"]),
                 container_id=entry.get("container_id"),
                 metrics=metrics,

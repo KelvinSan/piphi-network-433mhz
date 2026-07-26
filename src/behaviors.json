@@ -44,7 +44,7 @@
               "type": "number",
               "default": 30,
               "step": 0.5,
-              "unit": "°C",
+              "unit": "\u00b0C",
               "required": true
             }
           ],
@@ -177,6 +177,9 @@
           },
           "ui": {
             "group": "do_this"
+          },
+          "safety": {
+            "riskLevel": "low"
           }
         },
         {
@@ -225,6 +228,9 @@
           },
           "ui": {
             "group": "do_this"
+          },
+          "safety": {
+            "riskLevel": "low"
           }
         }
       ],
@@ -409,5 +415,41 @@
       }
     }
   ],
-  "behaviorSchemaVersion": "integration.behaviors.v2"
+  "behaviorSchemaVersion": "integration.behaviors.v2",
+  "telemetry": {
+    "capabilityMappings": [
+      {
+        "nativeMetric": "battery_ok",
+        "capability": "sensor.battery_ok"
+      },
+      {
+        "nativeMetric": "contact_open",
+        "capability": "sensor.contact_open"
+      },
+      {
+        "nativeMetric": "humidity_percent",
+        "capability": "sensor.humidity_percent"
+      },
+      {
+        "nativeMetric": "leak_detected",
+        "capability": "sensor.leak_detected"
+      },
+      {
+        "nativeMetric": "rain_total_mm",
+        "capability": "sensor.rain_total_mm"
+      },
+      {
+        "nativeMetric": "signal_rssi",
+        "capability": "sensor.signal_rssi"
+      },
+      {
+        "nativeMetric": "temperature_c",
+        "capability": "sensor.temperature_c"
+      },
+      {
+        "nativeMetric": "wind_speed_kph",
+        "capability": "sensor.wind_speed_kph"
+      }
+    ]
+  }
 }

@@ -19,7 +19,7 @@ service that listens for radio packets and forwards decoded JSON into the runtim
 
 This integration now installs the published runtime kit directly from PyPI:
 
-- runtime SDK: `piphi-runtime-kit-python[fastapi,mqtt]==0.4.6`
+- runtime SDK: `piphi-runtime-kit-python[fastapi,mqtt]==0.5.0`
 - local test helper during development: `piphi-runtime-testkit-python`
 
 You do not need a sibling checkout of the runtime SDK just to run the
