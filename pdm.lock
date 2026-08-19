@@ -5,7 +5,7 @@
 groups = ["default", "dev"]
 strategy = ["inherit_metadata"]
 lock_version = "4.5.0"
-content_hash = "sha256:c5dfe70862aa60e0b11903dae8e3d61fa9d1f2e60aad1f0d10a55afeef00076c"
+content_hash = "sha256:554d6655691dae3ba68fa77197eb66145d01513d742c41842338ac39032b21fc"
 
 [[metadata.targets]]
 requires_python = "==3.12.*"
@@ -420,7 +420,7 @@ files = [
 
 [[package]]
 name = "piphi-runtime-kit-python"
-version = "0.6.0"
+version = "0.7.1"
 requires_python = ">=3.11"
 summary = "PiPhi Network runtime integration helpers"
 groups = ["default"]
@@ -429,12 +429,12 @@ dependencies = [
     "pydantic<2.14,>=2.8",
 ]
 files = [
-    {file = "piphi_runtime_kit_python-0.6.0-py3-none-any.whl", hash = "sha256:c2c135eb9f83ebd0900c6d0ee0164cefa8789d9dedb6646c2d46ec6738a49248"},
+    {file = "piphi_runtime_kit_python-0.7.1-py3-none-any.whl", hash = "sha256:6ad08349ef2940d560ca8dec9bfd80ab679341de39a281edeca4857cdd649eeb"},
 ]
 
 [[package]]
 name = "piphi-runtime-kit-python"
-version = "0.6.0"
+version = "0.7.1"
 extras = ["fastapi", "mqtt"]
 requires_python = ">=3.11"
 summary = "PiPhi Network runtime integration helpers"
@@ -442,10 +442,10 @@ groups = ["default"]
 dependencies = [
     "aiomqtt<3.0,>=2.4",
     "fastapi<1.0,>=0.115",
-    "piphi-runtime-kit-python==0.6.0",
+    "piphi-runtime-kit-python==0.7.1",
 ]
 files = [
-    {file = "piphi_runtime_kit_python-0.6.0-py3-none-any.whl", hash = "sha256:c2c135eb9f83ebd0900c6d0ee0164cefa8789d9dedb6646c2d46ec6738a49248"},
+    {file = "piphi_runtime_kit_python-0.7.1-py3-none-any.whl", hash = "sha256:6ad08349ef2940d560ca8dec9bfd80ab679341de39a281edeca4857cdd649eeb"},
 ]
 
 [[package]]
