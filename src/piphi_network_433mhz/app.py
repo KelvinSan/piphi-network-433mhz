@@ -14,6 +14,8 @@ from fastapi import FastAPI, Request
 from pydantic import BaseModel, ConfigDict
 
 from piphi_runtime_kit_python import (
+    AutomationActionRequest,
+    AutomationRegistry,
     IntegrationCommandRequest,
     IntegrationDiscoveryRequest,
     IntegrationDiscoveryResponse,
@@ -25,6 +27,7 @@ from piphi_runtime_kit_python import (
     RuntimeConfigSyncResponse,
     RuntimeDiagnosticsResponse,
     RuntimeHealthResponse,
+    SQLiteAutomationIdempotencyStore,
     MqttBrokerConfig,
     MqttJsonClient,
     build_source_topic_root,
@@ -39,7 +42,10 @@ from piphi_runtime_kit_python import (
     schedule_telemetry_delivery,
     validate_typed_configs,
 )
-from piphi_runtime_kit_python.fastapi import sync_runtime_auth_from_fastapi_payload
+from piphi_runtime_kit_python.fastapi import (
+    dispatch_automation_action_from_fastapi,
+    sync_runtime_auth_from_fastapi_payload,
+)
 
 from .profiles import (
     PROFILE_DEFINITIONS,
@@ -109,6 +115,31 @@ telemetry = starter.telemetry_client
 config_sync = starter.config_sync
 recent_seen_devices: OrderedDict[str, dict[str, Any]] = OrderedDict()
 discovery_waiters: set[tuple[asyncio.AbstractEventLoop, asyncio.Event]] = set()
+_automation_ledger_path = Path(
+    os.getenv(
+        "PIPHI_AUTOMATION_LEDGER_PATH",
+        "/.piphinetwork/automation-actions.sqlite3",
+    )
+)
+automation_registry = AutomationRegistry(
+    idempotency_store=SQLiteAutomationIdempotencyStore(_automation_ledger_path)
+)
+
+
+async def _clear_discovery_cache_action(
+    action_request: AutomationActionRequest,
+) -> dict[str, Any]:
+    count = len(recent_seen_devices)
+    recent_seen_devices.clear()
+    persist_discovery_cache()
+    return {
+        "status": "ok",
+        "command": action_request.command,
+        "result": {"cleared_discovery_records": count},
+    }
+
+
+automation_registry.action("clear_discovery_cache")(_clear_discovery_cache_action)
 
 
 class Rtl433DeviceConfig(RuntimeConfig):
@@ -652,16 +683,25 @@ async def list_events(limit: int = 50) -> IntegrationEventListResponse:
 
 
 @app.post("/command")
-async def command(payload: IntegrationCommandRequest) -> dict[str, Any]:
+async def command(
+    payload: IntegrationCommandRequest,
+    request: Request,
+) -> dict[str, Any]:
+    sync_runtime_auth_from_fastapi_payload(runtime, request, payload)
     if payload.command == "clear_discovery_cache":
-        count = len(recent_seen_devices)
-        recent_seen_devices.clear()
-        persist_discovery_cache()
-        return {
-            "status": "ok",
-            "command": payload.command,
-            "result": {"cleared_discovery_records": count},
-        }
+        result = await dispatch_automation_action_from_fastapi(
+            automation_registry,
+            request,
+            payload,
+        )
+        if not result.ok:
+            return {
+                "status": "failed",
+                "command": payload.command,
+                "result": {"message": result.error},
+                "replayed": result.replayed,
+            }
+        return {**result.result, "replayed": result.replayed}
 
     return {
         "status": "unsupported",

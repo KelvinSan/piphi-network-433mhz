@@ -455,6 +455,38 @@ def test_command_clear_discovery_cache_handles_empty_cache() -> None:
     assert response.json()["result"]["cleared_discovery_records"] == 0
 
 
+def test_command_clear_cache_replay_does_not_repeat_cache_mutation() -> None:
+    reset_runtime_state()
+    client = TestClient(app)
+    client.post(
+        "/ingest/rtl433",
+        json={"model": "Nexus-TH", "id": 42, "temperature_C": 23.1},
+    )
+    headers = {"X-PiPhi-Idempotency-Key": "rtl433-clear-cache-idempotency-1"}
+
+    first = client.post(
+        "/command",
+        json={"command": "clear_discovery_cache"},
+        headers=headers,
+    )
+    client.post(
+        "/ingest/rtl433",
+        json={"model": "Nexus-TH", "id": 43, "temperature_C": 24.1},
+    )
+    replay = client.post(
+        "/command",
+        json={"command": "clear_discovery_cache"},
+        headers=headers,
+    )
+
+    assert first.status_code == 200
+    assert replay.status_code == 200
+    assert first.json()["replayed"] is False
+    assert replay.json()["replayed"] is True
+    assert replay.json()["result"]["cleared_discovery_records"] == 1
+    assert len(recent_seen_devices) == 1
+
+
 def test_command_returns_unsupported_for_unknown_command() -> None:
     reset_runtime_state()
     client = TestClient(app)
