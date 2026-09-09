@@ -83,6 +83,11 @@ pdm run pytest -q
 - `POST /command`
 - `POST /ingest/rtl433`
 
+The integration manifest declares optional discovery fields for the receive
+frequency and USB receiver selector. When supplied, `/discover` applies them to
+the required `piphi.service.rtl433-bridge` through its Core-provided service
+binding before it waits for packets.
+
 ## Packet sources
 
 The runtime can consume packets in two ways:

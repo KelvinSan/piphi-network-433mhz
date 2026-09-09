@@ -1,5 +1,6 @@
 import importlib
 import asyncio
+import json
 import time
 
 from fastapi.testclient import TestClient
@@ -133,6 +134,46 @@ def test_discover_can_filter_by_profile() -> None:
     assert len(devices) == 1
     assert devices[0]["profile"] == "contact_sensor"
     assert devices[0]["station_id"] == "7"
+
+
+def test_discover_applies_manifest_radio_inputs_before_scanning(monkeypatch) -> None:
+    reset_runtime_state()
+    client = TestClient(app)
+    received = []
+
+    async def fake_configure(inputs):
+        received.append(inputs)
+
+    monkeypatch.setattr(app_module, "configure_discovery_receiver", fake_configure)
+    client.post(
+        "/ingest/rtl433",
+        json={"model": "Nexus-TH", "id": 42, "temperature_C": 23.1},
+    )
+
+    response = client.post(
+        "/discover",
+        json={"inputs": {"radio_frequency": "915mhz", "rtlsdr_device": "1"}},
+    )
+
+    assert response.status_code == 200
+    assert received == [{"radio_frequency": "915mhz", "rtlsdr_device": "1"}]
+
+
+def test_resolve_rtl433_bridge_url_uses_generic_service_binding(monkeypatch) -> None:
+    monkeypatch.delenv(app_module.RTL433_BRIDGE_URL_ENV, raising=False)
+    monkeypatch.setenv(
+        "PIPHI_SERVICE_BINDINGS",
+        json.dumps(
+            {
+                app_module.RTL433_BRIDGE_SERVICE_ID: {
+                    "status": "available",
+                    "runtime_url": "http://127.0.0.1:8091",
+                }
+            }
+        ),
+    )
+
+    assert app_module.resolve_rtl433_bridge_url() == "http://127.0.0.1:8091"
 
 
 def test_discover_waits_for_next_packet_when_cache_is_empty(monkeypatch) -> None:

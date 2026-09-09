@@ -34,7 +34,25 @@
         }
       },
       "discovery": {
-        "method": "passive"
+        "method": "passive",
+        "inputs": [
+          {
+            "name": "radio_frequency",
+            "label": "Frequency",
+            "type": "text",
+            "required": false,
+            "placeholder": "433.92M",
+            "description": "Enter a band such as 315mhz, 433mhz, 868mhz, or 915mhz, or an exact rtl_433 frequency such as 344.975M. Leave blank for the current setting."
+          },
+          {
+            "name": "rtlsdr_device",
+            "label": "USB receiver or port",
+            "type": "text",
+            "required": false,
+            "placeholder": "auto",
+            "description": "Leave blank or use auto for one receiver. With multiple receivers, enter the rtl_433 device index or selector."
+          }
+        ]
       }
     }
   },

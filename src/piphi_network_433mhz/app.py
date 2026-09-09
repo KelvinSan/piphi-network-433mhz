@@ -4,13 +4,15 @@ import asyncio
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from importlib.metadata import PackageNotFoundError, version as package_version
 import json
 import os
 from pathlib import Path
 import time
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
+import httpx
 from pydantic import BaseModel, ConfigDict
 
 from piphi_runtime_kit_python import (
@@ -85,7 +87,12 @@ def _resolve_discovery_cache_path() -> Path | None:
 
 INTEGRATION_ID = "piphi-network-433mhz"
 INTEGRATION_NAME = "PiPhi Network 433MHz Devices"
-INTEGRATION_VERSION = "0.1.2"
+try:
+    INTEGRATION_VERSION = package_version("piphi-network-433mhz")
+except PackageNotFoundError:  # pragma: no cover - source checkout without an installed package
+    INTEGRATION_VERSION = "0.0.0"
+RTL433_BRIDGE_SERVICE_ID = "piphi.service.rtl433-bridge"
+RTL433_BRIDGE_URL_ENV = "PIPHI_SERVICE_RTL433_BRIDGE_RUNTIME_URL"
 MAX_DISCOVERY_CACHE = 200
 DISCOVERY_WAIT_SECONDS = max(
     0.0,
@@ -583,11 +590,71 @@ async def discover(
     payload: IntegrationDiscoveryRequest | None = None,
 ) -> IntegrationDiscoveryResponse:
     requested_profile = None
+    discovery_inputs: dict[str, Any] = {}
     if payload and payload.inputs:
+        discovery_inputs = dict(payload.inputs)
         requested_profile = payload.inputs.get("profile")
 
+    await configure_discovery_receiver(discovery_inputs)
     devices = await wait_for_discovery_devices(requested_profile)
     return build_discovery_response(devices)
+
+
+async def configure_discovery_receiver(inputs: dict[str, Any]) -> None:
+    settings = {
+        "frequency": _clean_discovery_input(inputs.get("radio_frequency")),
+        "rtlsdr_device": _clean_discovery_input(inputs.get("rtlsdr_device")),
+    }
+    settings = {key: value for key, value in settings.items() if value is not None}
+    if not settings:
+        return
+
+    bridge_url = resolve_rtl433_bridge_url()
+    if bridge_url is None:
+        raise HTTPException(
+            status_code=503,
+            detail="The rtl_433 radio service is not ready. Start the connection and try again.",
+        )
+
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            response = await client.post(f"{bridge_url.rstrip('/')}/radio/config", json=settings)
+            response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        detail = "The radio service rejected those receiver settings."
+        try:
+            response_detail = exc.response.json().get("detail")
+            if response_detail:
+                detail = str(response_detail)
+        except (ValueError, AttributeError):
+            pass
+        raise HTTPException(status_code=422, detail=detail) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="The rtl_433 radio service could not be reached. Check the connection and try again.",
+        ) from exc
+
+
+def resolve_rtl433_bridge_url() -> str | None:
+    direct_url = str(os.getenv(RTL433_BRIDGE_URL_ENV) or "").strip()
+    if direct_url:
+        return direct_url
+
+    try:
+        bindings = json.loads(os.getenv("PIPHI_SERVICE_BINDINGS", "{}"))
+    except json.JSONDecodeError:
+        return None
+    binding = bindings.get(RTL433_BRIDGE_SERVICE_ID) if isinstance(bindings, dict) else None
+    if not isinstance(binding, dict) or binding.get("status") != "available":
+        return None
+    url = str(binding.get("runtime_url") or binding.get("url") or "").strip()
+    return url or None
+
+
+def _clean_discovery_input(value: Any) -> str | None:
+    cleaned = str(value or "").strip()
+    return cleaned or None
 
 
 @app.post("/config")
