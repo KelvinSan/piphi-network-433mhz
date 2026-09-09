@@ -44,6 +44,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 concurrency:
   group: 433mhz-integration-release-${{ github.event.repository.full_name }}
@@ -51,8 +52,7 @@ concurrency:
 
 env:
   RELEASE_IMAGE: piphinetwork/piphi-network-433mhz
-  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_USERNAME || secrets.DOCKER_USERNAME }}
-  DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN != '' && secrets.DOCKERHUB_TOKEN || secrets.DOCKER_PASSWORD }}
+  DOCKERHUB_OIDC_CONNECTIONID: ${{ vars.DOCKERHUB_OIDC_CONNECTIONID }}
 
 jobs:
   release:
@@ -152,19 +152,26 @@ jobs:
           set -euo pipefail
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Log in to Docker Hub
-        if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
-        uses: docker/login-action@v3
+      - name: Exchange Docker Hub OIDC token
+        if: ${{ env.DOCKERHUB_OIDC_CONNECTIONID != '' }}
+        id: docker_oidc
+        uses: docker/oidc-action@v1
         with:
-          username: ${{ env.DOCKERHUB_USERNAME }}
-          password: ${{ env.DOCKERHUB_TOKEN }}
+          connection_id: ${{ env.DOCKERHUB_OIDC_CONNECTIONID }}
 
-      - name: Require Docker Hub credentials
-        if: ${{ env.DOCKERHUB_USERNAME == '' || env.DOCKERHUB_TOKEN == '' }}
+      - name: Log in to Docker Hub
+        if: ${{ env.DOCKERHUB_OIDC_CONNECTIONID != '' }}
+        uses: docker/login-action@v4.5.0
+        with:
+          username: piphinetwork
+          password: ${{ steps.docker_oidc.outputs.token }}
+
+      - name: Require Docker Hub OIDC connection
+        if: ${{ env.DOCKERHUB_OIDC_CONNECTIONID == '' }}
         shell: bash
         run: |
           set -euo pipefail
-          echo "Set DOCKERHUB_USERNAME/DOCKERHUB_TOKEN or DOCKER_USERNAME/DOCKER_PASSWORD secrets before releasing." >&2
+          echo "Set the DOCKERHUB_OIDC_CONNECTIONID repository variable before releasing." >&2
           exit 1
 
       - name: Set up QEMU
